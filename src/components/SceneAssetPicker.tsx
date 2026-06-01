@@ -32,6 +32,16 @@ const KIND_LABELS: Record<AssetKind, string> = {
   AUDIO: '音频',
 }
 
+/**
+ * 将接口返回的小写素材类型统一转换为分镜选择器使用的大写分类，确保演示数据和真实接口都能正常挂载素材。
+ */
+function normalizeAssetKind(type: string): AssetKind | null {
+  const kind = type.toUpperCase()
+  return kind === 'CHARACTER' || kind === 'BACKGROUND' || kind === 'PROP' || kind === 'AUDIO'
+    ? kind
+    : null
+}
+
 type AssetsState = {
   assets: Asset[]
   loading: boolean
@@ -77,7 +87,7 @@ export default function SceneAssetPicker({
     return assets.filter((a) => {
       if (activeKind === 'REFERENCE') {
         if (!a.mimeType.startsWith('image/')) return false
-      } else if (a.type !== activeKind) return false
+      } else if (normalizeAssetKind(a.type) !== activeKind) return false
       if (!q) return true
       return (
         a.name.toLowerCase().includes(q) ||
@@ -108,7 +118,7 @@ export default function SceneAssetPicker({
       onReferenceImageChange?.(referenceImage === asset.url ? null : asset.url)
       return
     }
-    const kind = asset.type as AssetKind
+    const kind = normalizeAssetKind(asset.type)
     if (kind === 'CHARACTER') {
       const next = characterIds.includes(asset.id)
         ? characterIds.filter((id) => id !== asset.id)
@@ -236,7 +246,7 @@ export default function SceneAssetPicker({
             </div>
             <div className="px-4 py-3 border-b border-border-default flex items-center gap-2">
               <div className="flex items-center gap-1">
-                {(['CHARACTER', 'BACKGROUND', 'PROP', 'AUDIO'] as AssetKind[]).map((k) => (
+                {(['REFERENCE', 'CHARACTER', 'BACKGROUND', 'PROP', 'AUDIO'] as AssetKind[]).map((k) => (
                   <button
                     key={k}
                     onClick={() => setActiveKind(k)}

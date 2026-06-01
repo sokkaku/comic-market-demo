@@ -35,11 +35,6 @@ export default function SceneGenerationPanel({ scene, onBeforeGenerate, onComple
   const [shareTags, setShareTags] = useState('')
   const [sharing, setSharing] = useState(false)
 
-  useEffect(() => {
-    setLatestUrl(scene.latestResultUrl ?? null)
-    setLatestThumb(scene.latestResultThumbnail ?? null)
-  }, [scene.latestResultUrl, scene.latestResultThumbnail])
-
   // Cleanup polling on unmount or scene change
   useEffect(() => {
     return () => {
@@ -127,7 +122,9 @@ export default function SceneGenerationPanel({ scene, onBeforeGenerate, onComple
       const job = await generationApi.submit({
         projectId: scene.projectId,
         sceneIds: [scene.id],
+        modelId: scene.modelId ?? undefined,
         workType: 'video',
+        params: scene.modelParams,
       })
       setJobId(job.id)
       beginPolling(job.id)

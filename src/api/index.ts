@@ -309,7 +309,7 @@ export const generationApi = {
     setTimeout(() => {
       const jobs = getDemoJobs()
       const idx = jobs.findIndex((j) => j.id === newJob.id)
-      if (idx !== -1) {
+      if (idx !== -1 && jobs[idx].status !== 'CANCELED') {
         jobs[idx] = { ...jobs[idx], status: 'PROCESSING', progress: 30, startedAt: new Date().toISOString() }
         setDemoJobs(jobs)
       }
@@ -317,7 +317,7 @@ export const generationApi = {
     setTimeout(() => {
       const jobs = getDemoJobs()
       const idx = jobs.findIndex((j) => j.id === newJob.id)
-      if (idx !== -1) {
+      if (idx !== -1 && jobs[idx].status !== 'CANCELED') {
         jobs[idx] = { ...jobs[idx], status: 'PROCESSING', progress: 70 }
         setDemoJobs(jobs)
       }
@@ -325,17 +325,26 @@ export const generationApi = {
     setTimeout(() => {
       const jobs = getDemoJobs()
       const idx = jobs.findIndex((j) => j.id === newJob.id)
-      if (idx !== -1) {
-        const resultUrl = assetUrl('demo-art/rainy-duel.webp')
+      if (idx !== -1 && jobs[idx].status !== 'CANCELED') {
+        const projects = getDemoProjects()
+        const projectIndex = projects.findIndex((p) => p.id === projectId)
+        const sceneIndex = projects[projectIndex]?.scenes?.findIndex((scene) => scene.id === sceneIds[0])
+        const sceneNumber = projects[projectIndex]?.scenes?.[sceneIndex ?? -1]?.number ?? 1
+        const demoResultPaths = [
+          'demo-art/rainy-duel.webp',
+          'demo-art/cyber-chase.webp',
+          'demo-art/rainy-cyber-street.webp',
+          'demo-art/magic-battle.webp',
+          'demo-art/sakura-promise.webp',
+        ]
+        // 每个分镜按编号轮换演示结果，让重复生成和新增分镜在演示时呈现不同画面。
+        const resultUrl = assetUrl(demoResultPaths[(sceneNumber - 1) % demoResultPaths.length])
         jobs[idx] = {
           ...jobs[idx], status: 'COMPLETED', progress: 100,
           completedAt: new Date().toISOString(),
           results: [{ id: `res-${Date.now()}`, sceneId: sceneIds[0], url: resultUrl, thumbnail: resultUrl }]
         }
         setDemoJobs(jobs)
-        const projects = getDemoProjects()
-        const projectIndex = projects.findIndex((p) => p.id === projectId)
-        const sceneIndex = projects[projectIndex]?.scenes?.findIndex((scene) => scene.id === sceneIds[0])
         if (projectIndex !== -1 && sceneIndex !== undefined && sceneIndex !== -1 && projects[projectIndex].scenes) {
           projects[projectIndex].scenes![sceneIndex] = {
             ...projects[projectIndex].scenes![sceneIndex],

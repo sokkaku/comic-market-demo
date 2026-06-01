@@ -251,36 +251,6 @@ export default function Storyboard() {
     [scenes, selectedSceneId]
   )
 
-  // When user picks a different scene, load its draft
-  const selectScene = useCallback(
-    (scene: Scene) => {
-      if (dirty && selectedScene) {
-        // best-effort save before switching
-        void persistDraft(false)
-      }
-      setSelectedSceneId(scene.id)
-      setDraft(sceneToDraft(scene))
-      setDirty(false)
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dirty, selectedScene, draft]
-  )
-
-  const refreshScenes = useCallback(async () => {
-    if (!projectId) return
-    try {
-      const list = await projectApi.listScenes(projectId)
-      setScenes(list)
-      // refresh current selection's snapshot fields without nuking unsaved edits
-      const current = list.find((s) => s.id === selectedSceneId)
-      if (current && !dirty) {
-        setDraft(sceneToDraft(current))
-      }
-    } catch (err: unknown) {
-      toast.error('刷新场景列表失败', { description: getErrorMessage(err) })
-    }
-  }, [projectId, selectedSceneId, dirty])
-
   const persistDraft = useCallback(
     async (showToast = true) => {
       if (!projectId || !selectedSceneId || !draft) return
@@ -301,6 +271,35 @@ export default function Storyboard() {
     },
     [projectId, selectedSceneId, draft]
   )
+
+  // When user picks a different scene, load its draft
+  const selectScene = useCallback(
+    (scene: Scene) => {
+      if (dirty && selectedScene) {
+        // best-effort save before switching
+        void persistDraft(false)
+      }
+      setSelectedSceneId(scene.id)
+      setDraft(sceneToDraft(scene))
+      setDirty(false)
+    },
+    [dirty, selectedScene, persistDraft]
+  )
+
+  const refreshScenes = useCallback(async () => {
+    if (!projectId) return
+    try {
+      const list = await projectApi.listScenes(projectId)
+      setScenes(list)
+      // refresh current selection's snapshot fields without nuking unsaved edits
+      const current = list.find((s) => s.id === selectedSceneId)
+      if (current && !dirty) {
+        setDraft(sceneToDraft(current))
+      }
+    } catch (err: unknown) {
+      toast.error('刷新场景列表失败', { description: getErrorMessage(err) })
+    }
+  }, [projectId, selectedSceneId, dirty])
 
   // Autosave on edits — debounced 1200ms
   useEffect(() => {
