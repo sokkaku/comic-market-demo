@@ -22,6 +22,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { modelApi, generationApi, creditApi } from '@/api'
 import type { AIModel, GenerationJob, CreditPackage } from '@/api'
+import { assetUrl } from '@/lib/assets'
 
 /* ─── Animation Variants ─── */
 const fadeUp = {
@@ -71,7 +72,7 @@ function HeroSection() {
         className="absolute inset-0 w-full h-full object-cover"
         style={{ transform: 'scale(1.1)' }}
       >
-        <source src="/hero-bg-video.mp4" type="video/mp4" />
+        <source src={assetUrl('hero-bg-video.mp4')} type="video/mp4" />
       </video>
       {/* Overlay */}
       <div className="absolute inset-0 bg-[rgba(10,10,15,0.6)]" />
@@ -392,7 +393,7 @@ function getModelLogoUrl(model: AIModel) {
   const modelText = `${model.key} ${model.name} ${model.adapter}`.toLowerCase()
   const rule = MODEL_LOGO_RULES.find(({ keywords }) => keywords.some((keyword) => modelText.includes(keyword)))
 
-  return rule ? `${LOBE_ICON_BASE_URL}/${rule.icon}.svg` : '/model-comfyui.jpg'
+  return rule ? `${LOBE_ICON_BASE_URL}/${rule.icon}.svg` : assetUrl('model-comfyui.jpg')
 }
 
 function ModelHighlightsSection() {
@@ -583,14 +584,14 @@ function FeatureGridSection() {
 
 /* ─── Section 5: Live Gallery Preview ─── */
 const FALLBACK_GALLERY = [
-  { title: '雨中决斗', author: '张小明', model: '豆包 Seedance', image: '/gallery-sample-1.jpg' },
-  { title: '魔法战场', author: '李创意', model: '可灵 Kling', image: '/gallery-sample-2.jpg' },
-  { title: '樱花下的约定', author: '王视频', model: 'Luma Ray', image: '/gallery-sample-3.jpg' },
-  { title: '暗夜追逐', author: '创作者A', model: '豆包 Seedance', image: '/gallery-sample-1.jpg' },
-  { title: '魔法少女变身', author: '创作者B', model: '可灵 Kling', image: '/gallery-sample-2.jpg' },
-  { title: '校园日常', author: '创作者C', model: 'Runway', image: '/gallery-sample-3.jpg' },
-  { title: '赛博朋克城市', author: '创作者D', model: '豆包 Seedance', image: '/gallery-sample-1.jpg' },
-  { title: '古风仙侠', author: '创作者E', model: 'Wan 2.1', image: '/gallery-sample-3.jpg' },
+  { title: '雨中决斗', author: '张小明', model: '豆包 Seedance', image: assetUrl('demo-art/rainy-duel.webp') },
+  { title: '魔法战场', author: '李创意', model: '可灵 Kling', image: assetUrl('demo-art/magic-battle.webp') },
+  { title: '樱花下的约定', author: '王视频', model: 'Luma Ray', image: assetUrl('demo-art/sakura-promise.webp') },
+  { title: '暗夜追逐', author: '创作者A', model: '豆包 Seedance', image: assetUrl('demo-art/cyber-chase.webp') },
+  { title: '魔法少女变身', author: '创作者B', model: '可灵 Kling', image: assetUrl('demo-art/magic-girl.webp') },
+  { title: '校园日常', author: '创作者C', model: 'Runway', image: assetUrl('demo-art/classroom.webp') },
+  { title: '赛博朋克城市', author: '创作者D', model: '豆包 Seedance', image: assetUrl('demo-art/cyber-skyline.webp') },
+  { title: '古风仙侠', author: '创作者E', model: 'Wan 2.1', image: assetUrl('demo-art/xianxia-clouds.webp') },
 ]
 
 interface GalleryItem {
@@ -966,7 +967,7 @@ function TestimonialsSection() {
               </p>
               <div className="flex items-center gap-3">
                 <img
-                  src="/avatar-default.jpg"
+                  src={assetUrl('avatar-default.jpg')}
                   alt={t.author}
                   className="w-10 h-10 rounded-full object-cover border border-border-default"
                 />

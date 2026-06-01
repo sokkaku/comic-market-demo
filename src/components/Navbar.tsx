@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { creditApi } from '@/api'
+import { assetUrl } from '@/lib/assets'
 
 const navLinks = [
   { to: '/', label: '首页', icon: Home },
@@ -146,7 +147,7 @@ export default function Navbar() {
                   className="flex items-center gap-1.5 rounded-full hover:bg-white/5 transition-colors p-1"
                 >
                   <img
-                    src={user?.avatar || '/avatar-default.jpg'}
+                    src={user?.avatar || assetUrl('avatar-default.jpg')}
                     alt="User"
                     className="w-8 h-8 rounded-full object-cover border border-border-default"
                   />

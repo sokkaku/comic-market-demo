@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { useAuth } from '@/context/AuthContext'
 import { userApi, referralApi } from '@/api'
 import type { Account, ReferralStats, ReferralReward } from '@/api'
+import { assetUrl } from '@/lib/assets'
 
 export default function Profile() {
   const { user, refreshUser } = useAuth()
@@ -125,7 +126,7 @@ export default function Profile() {
                   <h3 className="font-display font-semibold text-text-primary mb-4">基本信息</h3>
                   <div className="flex items-center gap-4 mb-6">
                     <img
-                      src={user?.avatar || '/avatar-default.jpg'}
+                      src={user?.avatar || assetUrl('avatar-default.jpg')}
                       alt="Avatar"
                       className="w-16 h-16 rounded-full object-cover border-2 border-border-active"
                     />

@@ -15,6 +15,7 @@ import {
   getDemoBalance, setDemoBalance,
   getDemoTransactions, setDemoTransactions,
 } from './mockData'
+import { assetUrl } from '@/lib/assets'
 
 // Re-export types
 export type { ReferralStats, ReferralReward, ReferralRewardsResponse } from './types'
@@ -109,6 +110,12 @@ export const modelApi = {
     await delay(300)
     return MOCK_MODELS
   },
+  async get(id: string): Promise<AIModel> {
+    await delay(200)
+    const model = MOCK_MODELS.find((m) => m.id === id)
+    if (!model) throw new Error('模型不存在')
+    return model
+  },
 }
 
 // ─── Image Generation ───
@@ -124,8 +131,8 @@ export const imageGenerationApi = {
   async generate(_params: Record<string, unknown>): Promise<GenerateImageResult> {
     await delay(2000)
     return {
-      url: '/gallery-sample-1.jpg', width: 1024, height: 1024,
-      seed: Math.floor(Math.random() * 1000000), format: 'png',
+      url: assetUrl('demo-art/magic-girl.webp'), width: 1672, height: 941,
+      seed: Math.floor(Math.random() * 1000000), format: 'webp',
     }
   },
 }
@@ -166,12 +173,58 @@ export const projectApi = {
     await delay(300)
     setDemoProjects(getDemoProjects().filter((p) => p.id !== id))
   },
-  // Alias methods used by Storyboard page
+  /** 分镜页仍从 projectApi 调用分镜接口，演示环境在这里代理到内存版 sceneApi。 */
+  async listScenes(projectId: string): Promise<Scene[]> {
+    return sceneApi.list(projectId)
+  },
+  /** 创建分镜后立即写回所属项目，确保演示页面刷新列表时能看到新数据。 */
+  async createScene(projectId: string, data: SceneInput): Promise<Scene> {
+    return sceneApi.create(projectId, data)
+  },
   async updateScene(projectId: string, sceneId: string, data: SceneUpdateInput): Promise<Scene> {
     return sceneApi.update(projectId, sceneId, data)
   },
   async deleteScene(projectId: string, sceneId: string): Promise<void> {
     return sceneApi.delete(projectId, sceneId)
+  },
+  /** 复制当前分镜并重排编号，模拟真实后端的 duplicateScene 行为。 */
+  async duplicateScene(projectId: string, sceneId: string): Promise<Scene> {
+    await delay(300)
+    const projects = getDemoProjects()
+    const projectIndex = projects.findIndex((p) => p.id === projectId)
+    const source = projects[projectIndex]?.scenes?.find((scene) => scene.id === sceneId)
+    if (projectIndex === -1 || !source) throw new Error('场景不存在')
+    const nextScene: Scene = {
+      ...source,
+      id: `scene-${Date.now()}`,
+      number: (projects[projectIndex].scenes?.length ?? 0) + 1,
+      title: `${source.title} 副本`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      latestJobId: null,
+    }
+    projects[projectIndex].scenes = [...(projects[projectIndex].scenes ?? []), nextScene].map((scene, index) => ({
+      ...scene,
+      number: index + 1,
+    }))
+    projects[projectIndex].updatedAt = new Date().toISOString()
+    setDemoProjects(projects)
+    return nextScene
+  },
+  /** 按拖拽后的 id 顺序重排项目分镜，保持左侧列表编号稳定更新。 */
+  async reorderScenes(projectId: string, sceneIds: string[]): Promise<void> {
+    await delay(200)
+    const projects = getDemoProjects()
+    const projectIndex = projects.findIndex((p) => p.id === projectId)
+    if (projectIndex === -1) throw new Error('项目不存在')
+    const scenes = projects[projectIndex].scenes ?? []
+    const sceneById = new Map(scenes.map((scene) => [scene.id, scene]))
+    projects[projectIndex].scenes = sceneIds
+      .map((id) => sceneById.get(id))
+      .filter((scene): scene is Scene => !!scene)
+      .map((scene, index) => ({ ...scene, number: index + 1 }))
+    projects[projectIndex].updatedAt = new Date().toISOString()
+    setDemoProjects(projects)
   },
 }
 
@@ -248,16 +301,16 @@ export const generationApi = {
     await delay(500)
     const newJob: GenerationJob = {
       id: `job-${Date.now()}`, projectId, sceneIds, modelId,
-      status: 'queued', params: _params || {}, cost: 100, progress: 0,
+      status: 'QUEUED', params: _params || {}, cost: 100, progress: 0,
       workType: 'video', tags: [], queuedAt: new Date().toISOString(),
     }
     setDemoJobs([newJob, ...getDemoJobs()])
-    // Simulate progress
+    // 模拟生成任务推进，并在完成时把最新结果同步回对应分镜，便于演示预览刷新。
     setTimeout(() => {
       const jobs = getDemoJobs()
       const idx = jobs.findIndex((j) => j.id === newJob.id)
       if (idx !== -1) {
-        jobs[idx] = { ...jobs[idx], status: 'running', progress: 30, startedAt: new Date().toISOString() }
+        jobs[idx] = { ...jobs[idx], status: 'PROCESSING', progress: 30, startedAt: new Date().toISOString() }
         setDemoJobs(jobs)
       }
     }, 2000)
@@ -265,7 +318,7 @@ export const generationApi = {
       const jobs = getDemoJobs()
       const idx = jobs.findIndex((j) => j.id === newJob.id)
       if (idx !== -1) {
-        jobs[idx] = { ...jobs[idx], status: 'running', progress: 70 }
+        jobs[idx] = { ...jobs[idx], status: 'PROCESSING', progress: 70 }
         setDemoJobs(jobs)
       }
     }, 5000)
@@ -273,21 +326,49 @@ export const generationApi = {
       const jobs = getDemoJobs()
       const idx = jobs.findIndex((j) => j.id === newJob.id)
       if (idx !== -1) {
+        const resultUrl = assetUrl('demo-art/rainy-duel.webp')
         jobs[idx] = {
-          ...jobs[idx], status: 'completed', progress: 100,
+          ...jobs[idx], status: 'COMPLETED', progress: 100,
           completedAt: new Date().toISOString(),
-          results: [{ id: `res-${Date.now()}`, sceneId: sceneIds[0], url: '/gallery-sample-1.jpg', thumbnail: '/gallery-sample-1.jpg' }]
+          results: [{ id: `res-${Date.now()}`, sceneId: sceneIds[0], url: resultUrl, thumbnail: resultUrl }]
         }
         setDemoJobs(jobs)
+        const projects = getDemoProjects()
+        const projectIndex = projects.findIndex((p) => p.id === projectId)
+        const sceneIndex = projects[projectIndex]?.scenes?.findIndex((scene) => scene.id === sceneIds[0])
+        if (projectIndex !== -1 && sceneIndex !== undefined && sceneIndex !== -1 && projects[projectIndex].scenes) {
+          projects[projectIndex].scenes![sceneIndex] = {
+            ...projects[projectIndex].scenes![sceneIndex],
+            latestJobId: newJob.id,
+            latestResultUrl: resultUrl,
+            latestResultThumbnail: resultUrl,
+            updatedAt: new Date().toISOString(),
+          }
+          setDemoProjects(projects)
+        }
       }
     }, 8000)
     return newJob
+  },
+  /** 兼容真实前端的提交接口，把对象参数转成演示环境的内存任务。 */
+  async submit(data: { projectId: string; sceneIds: string[]; modelId?: string; workType?: string; params?: Record<string, unknown> }): Promise<GenerationJob> {
+    return generationApi.create(data.projectId, data.sceneIds, data.modelId ?? 'doubao', data.params)
   },
   async getJob(id: string): Promise<GenerationJob> {
     await delay(200)
     const job = getDemoJobs().find((j) => j.id === id)
     if (!job) throw new Error('任务不存在')
     return job
+  },
+  /** 取消演示任务时只更新内存状态，轮询面板会据此回到 idle。 */
+  async cancelJob(id: string): Promise<void> {
+    await delay(200)
+    const jobs = getDemoJobs()
+    const idx = jobs.findIndex((job) => job.id === id)
+    if (idx !== -1) {
+      jobs[idx] = { ...jobs[idx], status: 'CANCELED', progress: jobs[idx].progress ?? 0 }
+      setDemoJobs(jobs)
+    }
   },
 }
 
@@ -320,8 +401,8 @@ export const assetApi = {
     await delay(1500)
     const newAsset: Asset = {
       id: `asset-${Date.now()}`, name: '上传素材', type: 'image',
-      mimeType: 'image/png', size: 2048000, url: '/gallery-sample-1.jpg',
-      thumbnail: '/gallery-sample-1.jpg', width: 1024, height: 1024,
+      mimeType: 'image/webp', size: 2048000, url: assetUrl('demo-art/sakura-street.webp'),
+      thumbnail: assetUrl('demo-art/sakura-street.webp'), width: 1672, height: 941,
       tags: [], usageCount: 0, createdAt: new Date().toISOString(),
     }
     setDemoAssets([newAsset, ...getDemoAssets()])
@@ -359,8 +440,8 @@ export const assetApi = {
     await delay(3000)
     const newAsset: Asset = {
       id: `asset-${Date.now()}`, name: 'AI生成素材', type: 'image',
-      mimeType: 'image/png', size: 3072000, url: '/gallery-sample-2.jpg',
-      thumbnail: '/gallery-sample-2.jpg', width: 1024, height: 1024,
+      mimeType: 'image/webp', size: 3072000, url: assetUrl('demo-art/magic-girl.webp'),
+      thumbnail: assetUrl('demo-art/magic-girl.webp'), width: 1672, height: 941,
       tags: ['AI生成'], usageCount: 0, createdAt: new Date().toISOString(),
     }
     setDemoAssets([newAsset, ...getDemoAssets()])
