@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FolderOpen,
@@ -31,13 +31,15 @@ import { toast } from 'sonner'
 import { assetApi, imageGenerationApi, communityApi } from '@/api'
 import { downloadFile } from '@/lib/download'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { Asset, ImageModelConfig } from '@/api'
+import SceneAssetEditor, { type SceneEditorMode } from '@/components/SceneAssetEditor'
+import type { Asset, ImageModelConfig, SceneAssetKind } from '@/api/types'
 
 const assetTypes = [
   { label: '全部', value: '', icon: FolderOpen },
   { label: '角色', value: 'character', icon: Image },
   { label: '背景', value: 'background', icon: Image },
   { label: '道具', value: 'prop', icon: FileText },
+  { label: '场景', value: 'scene', icon: Clapperboard },
   { label: '视频', value: 'video', icon: Video },
 ]
 
@@ -49,6 +51,37 @@ const sortOptions = [
   { label: '最大文件', value: 'size:desc' },
   { label: '最小文件', value: 'size:asc' },
 ]
+
+const sceneKindOptions: Array<{
+  label: string
+  value: '' | SceneAssetKind
+  description: string
+  actionLabel: string
+  icon: typeof Image
+}> = [
+  { label: '全部场景', value: '', description: '图片、3D、预览', actionLabel: '打开场景', icon: Clapperboard },
+  { label: '图片场景', value: 'image', description: '静态参考图', actionLabel: '生成 3D 预览', icon: Image },
+  { label: '3D 编辑场景', value: 'editable3d', description: '可调角色骨骼', actionLabel: '编辑 3D 场景', icon: Box },
+  { label: '图片生成分镜 3D 预览', value: 'imageToStoryboard3d', description: '图转分镜预演', actionLabel: '打开 3D 预览', icon: Clapperboard },
+]
+
+const getErrorMessage = (error: unknown, fallback = '未知错误') => {
+  return error instanceof Error ? error.message : fallback
+}
+
+/** 场景资产缺少子类型时按图片场景处理，避免旧数据在资产页里失去可操作入口。 */
+const getSceneKind = (asset: Asset): SceneAssetKind => asset.sceneKind ?? 'image'
+
+/** 场景卡片和列表共用同一份元信息，保证筛选标签、按钮文案和编辑模式一致。 */
+const getSceneKindOption = (asset: Asset) => {
+  const kind = getSceneKind(asset)
+  return sceneKindOptions.find((option) => option.value === kind) ?? sceneKindOptions[1]
+}
+
+/** 图片类场景进入 3D 预览生成模式，真正的 3D 场景进入可编辑导演台模式。 */
+const getSceneEditorMode = (asset: Asset): SceneEditorMode => {
+  return getSceneKind(asset) === 'editable3d' ? 'edit3d' : 'storyboardPreview'
+}
 
 export default function Assets() {
   const [assets, setAssets] = useState<Asset[]>([])
@@ -73,12 +106,20 @@ export default function Assets() {
   const [shareWorkType, setShareWorkType] = useState('asset')
   const [shareTags, setShareTags] = useState('')
   const [sharing, setSharing] = useState(false)
+  const [editingSceneAsset, setEditingSceneAsset] = useState<Asset | null>(null)
+  const [sceneEditorMode, setSceneEditorMode] = useState<SceneEditorMode>('edit3d')
+  const [sceneKindFilter, setSceneKindFilter] = useState<'' | SceneAssetKind>('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Parse sort
   const [sortField, sortOrder] = sortBy.split(':') as [string, 'asc' | 'desc']
+
+  const visibleAssets = useMemo(() => {
+    if (typeFilter !== 'scene' || !sceneKindFilter) return assets
+    return assets.filter((asset) => asset.type === 'scene' && getSceneKind(asset) === sceneKindFilter)
+  }, [assets, sceneKindFilter, typeFilter])
 
   // Fetch assets
   const fetchAssets = useCallback(async () => {
@@ -93,9 +134,10 @@ export default function Assets() {
       if (search.trim()) params.search = search.trim()
       const result = await assetApi.list(params)
       setAssets(result.assets || [])
-    } catch (err: any) {
-      setError(err?.message || '加载资产失败')
-      toast.error('加载资产失败', { description: err?.message })
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, '加载资产失败')
+      setError(message)
+      toast.error('加载资产失败', { description: message })
     } finally {
       setLoading(false)
     }
@@ -103,7 +145,7 @@ export default function Assets() {
 
   // Initial fetch and filter change
   useEffect(() => {
-    fetchAssets()
+    void Promise.resolve().then(fetchAssets)
   }, [fetchAssets])
 
   // Debounced search
@@ -136,8 +178,8 @@ export default function Assets() {
         try {
           await assetApi.upload(formData)
           return { success: true, name: file.name }
-        } catch (err: any) {
-          return { success: false, name: file.name, error: err?.message }
+        } catch (err: unknown) {
+          return { success: false, name: file.name, error: getErrorMessage(err) }
         }
       })
 
@@ -172,8 +214,8 @@ export default function Assets() {
           return next
         })
         await fetchAssets()
-      } catch (err: any) {
-        toast.error('删除失败', { id: `del-${id}`, description: err?.message })
+      } catch (err: unknown) {
+        toast.error('删除失败', { id: `del-${id}`, description: getErrorMessage(err) })
       }
     },
     [fetchAssets]
@@ -188,8 +230,8 @@ export default function Assets() {
       toast.success('批量删除完成', { id: 'bulk-del' })
       setSelectedIds(new Set())
       await fetchAssets()
-    } catch (err: any) {
-      toast.error('批量删除失败', { id: 'bulk-del', description: err?.message })
+    } catch (err: unknown) {
+      toast.error('批量删除失败', { id: 'bulk-del', description: getErrorMessage(err) })
     }
   }, [selectedIds, fetchAssets])
 
@@ -204,12 +246,18 @@ export default function Assets() {
   }, [])
 
   const selectAll = useCallback(() => {
-    if (selectedIds.size === assets.length) {
+    if (selectedIds.size === visibleAssets.length) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(assets.map((a) => a.id)))
+      setSelectedIds(new Set(visibleAssets.map((asset) => asset.id)))
     }
-  }, [assets, selectedIds.size])
+  }, [selectedIds.size, visibleAssets])
+
+  /** 打开场景资产时根据子类型选择编辑器模式，图片场景会进入图生分镜 3D 预览流程。 */
+  const handleOpenSceneAsset = useCallback((asset: Asset) => {
+    setSceneEditorMode(getSceneEditorMode(asset))
+    setEditingSceneAsset(asset)
+  }, [])
 
   // Add tag
   const handleAddTag = useCallback(
@@ -220,8 +268,8 @@ export default function Assets() {
         toast.success(`标签 "${tag.trim()}" 已添加`)
         setTagInput('')
         await fetchAssets()
-      } catch (err: any) {
-        toast.error('添加标签失败', { description: err?.message })
+      } catch (err: unknown) {
+        toast.error('添加标签失败', { description: getErrorMessage(err) })
       }
     },
     [fetchAssets]
@@ -234,8 +282,8 @@ export default function Assets() {
         await assetApi.removeTag(assetId, tag)
         toast.success(`标签 "${tag}" 已移除`)
         await fetchAssets()
-      } catch (err: any) {
-        toast.error('移除标签失败', { description: err?.message })
+      } catch (err: unknown) {
+        toast.error('移除标签失败', { description: getErrorMessage(err) })
       }
     },
     [fetchAssets]
@@ -259,8 +307,8 @@ export default function Assets() {
       setShareAsset(null)
       setShareWorkType('asset')
       setShareTags('')
-    } catch (err: any) {
-      toast.error('分享失败', { description: err?.message })
+    } catch (err: unknown) {
+      toast.error('分享失败', { description: getErrorMessage(err) })
     } finally {
       setSharing(false)
     }
@@ -277,6 +325,13 @@ export default function Assets() {
   const categoryCounts = assetTypes.map((cat) => ({
     ...cat,
     count: cat.value === '' ? assets.length : assets.filter((a) => a.type === cat.value).length,
+  }))
+
+  const sceneKindCounts = sceneKindOptions.map((option) => ({
+    ...option,
+    count: option.value === ''
+      ? assets.filter((asset) => asset.type === 'scene').length
+      : assets.filter((asset) => asset.type === 'scene' && getSceneKind(asset) === option.value).length,
   }))
 
   return (
@@ -316,11 +371,14 @@ export default function Assets() {
         </div>
 
         {/* Category Filters */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
           {categoryCounts.map((cat) => (
             <button
               key={cat.value}
-              onClick={() => setTypeFilter(cat.value)}
+              onClick={() => {
+                setTypeFilter(cat.value)
+                if (cat.value !== 'scene') setSceneKindFilter('')
+              }}
               className={`bg-bg-secondary border rounded-radius-lg p-4 text-center hover:border-border-active transition-all ${
                 typeFilter === cat.value
                   ? 'border-accent-cyan/50 bg-accent-cyan/5'
@@ -333,6 +391,29 @@ export default function Assets() {
             </button>
           ))}
         </div>
+
+        {typeFilter === 'scene' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+            {sceneKindCounts.map((option) => (
+              <button
+                key={option.value || 'all-scenes'}
+                onClick={() => setSceneKindFilter(option.value)}
+                className={`bg-bg-secondary border rounded-radius-lg p-4 text-left hover:border-border-active transition-all ${
+                  sceneKindFilter === option.value
+                    ? 'border-accent-cyan/50 bg-accent-cyan/5'
+                    : 'border-border-default'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <option.icon className="w-5 h-5 text-accent-cyan" />
+                  <span className="text-text-muted text-xs font-mono">{option.count}</span>
+                </div>
+                <h3 className="font-display font-semibold text-text-primary text-sm">{option.label}</h3>
+                <p className="text-text-muted text-xs mt-1">{option.description}</p>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
@@ -440,7 +521,7 @@ export default function Assets() {
               重试
             </button>
           </div>
-        ) : assets.length === 0 ? (
+        ) : visibleAssets.length === 0 ? (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -457,7 +538,7 @@ export default function Assets() {
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             <AnimatePresence>
-              {assets.map((asset) => (
+              {visibleAssets.map((asset) => (
                 <motion.div
                   key={asset.id}
                   layout
@@ -476,7 +557,9 @@ export default function Assets() {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        {asset.type === 'video' ? (
+                        {asset.type === 'scene' ? (
+                          <Clapperboard className="w-8 h-8 text-text-muted" />
+                        ) : asset.type === 'video' ? (
                           <Video className="w-8 h-8 text-text-muted" />
                         ) : (
                           <Image className="w-8 h-8 text-text-muted" />
@@ -496,6 +579,18 @@ export default function Assets() {
                     </div>
                     {/* Actions */}
                     <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {asset.type === 'scene' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleOpenSceneAsset(asset)
+                          }}
+                          className="p-1.5 rounded-md bg-bg-primary/80 text-text-secondary hover:text-accent-cyan transition-colors"
+                          title={getSceneKindOption(asset).actionLabel}
+                        >
+                          <Clapperboard className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -536,7 +631,7 @@ export default function Assets() {
                     {/* Type badge */}
                     <div className="absolute bottom-2 left-2">
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-primary/80 text-text-secondary font-mono">
-                        {asset.type}
+                        {asset.type === 'scene' ? getSceneKindOption(asset).label : asset.type}
                       </span>
                     </div>
                   </div>
@@ -549,6 +644,14 @@ export default function Assets() {
                       <span className="text-text-muted text-xs font-mono">{formatSize(asset.size)}</span>
                       <span className="text-text-muted text-xs">{new Date(asset.createdAt).toLocaleDateString()}</span>
                     </div>
+                    {asset.type === 'scene' && (
+                      <button
+                        onClick={() => handleOpenSceneAsset(asset)}
+                        className="mt-2 w-full rounded-md border border-accent-cyan/25 bg-accent-cyan/5 px-2 py-1.5 text-xs font-medium text-accent-cyan hover:bg-accent-cyan/10 transition-colors"
+                      >
+                        {getSceneKindOption(asset).actionLabel}
+                      </button>
+                    )}
                     {/* Tags */}
                     <div className="flex flex-wrap gap-1 mt-2">
                       {asset.tags?.map((tag) => (
@@ -610,7 +713,7 @@ export default function Assets() {
             {/* List Header */}
             <div className="flex items-center gap-3 px-4 py-2 text-xs text-text-muted font-medium">
               <button onClick={selectAll} className="shrink-0">
-                {selectedIds.size === assets.length && assets.length > 0 ? (
+                {selectedIds.size === visibleAssets.length && visibleAssets.length > 0 ? (
                   <CheckSquare className="w-4 h-4 text-accent-cyan" />
                 ) : (
                   <Square className="w-4 h-4" />
@@ -620,10 +723,10 @@ export default function Assets() {
               <span className="w-24 text-center hidden sm:block">类型</span>
               <span className="w-24 text-center hidden md:block">大小</span>
               <span className="w-32 text-center hidden lg:block">上传时间</span>
-              <span className="w-28 text-center">操作</span>
+              <span className="w-36 text-center">操作</span>
             </div>
             <AnimatePresence>
-              {assets.map((asset) => (
+              {visibleAssets.map((asset) => (
                 <motion.div
                   key={asset.id}
                   layout
@@ -648,7 +751,9 @@ export default function Assets() {
                       />
                     ) : (
                       <div className="w-8 h-8 rounded bg-bg-tertiary flex items-center justify-center shrink-0">
-                        {asset.type === 'video' ? (
+                        {asset.type === 'scene' ? (
+                          <Clapperboard className="w-4 h-4 text-text-muted" />
+                        ) : asset.type === 'video' ? (
                           <Video className="w-4 h-4 text-text-muted" />
                         ) : (
                           <Image className="w-4 h-4 text-text-muted" />
@@ -667,7 +772,7 @@ export default function Assets() {
                     </div>
                   </div>
                   <span className="w-24 text-center text-xs text-text-secondary hidden sm:block capitalize">
-                    {asset.type}
+                    {asset.type === 'scene' ? getSceneKindOption(asset).label : asset.type}
                   </span>
                   <span className="w-24 text-center text-xs text-text-muted font-mono hidden md:block">
                     {formatSize(asset.size)}
@@ -675,7 +780,16 @@ export default function Assets() {
                   <span className="w-32 text-center text-xs text-text-muted hidden lg:block">
                     {new Date(asset.createdAt).toLocaleDateString()}
                   </span>
-                  <div className="w-28 flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="w-36 flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {asset.type === 'scene' && (
+                      <button
+                        onClick={() => handleOpenSceneAsset(asset)}
+                        className="p-1.5 rounded hover:bg-white/5 text-text-muted hover:text-accent-cyan transition-colors"
+                        title={getSceneKindOption(asset).actionLabel}
+                      >
+                        <Clapperboard className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={() => downloadFile(asset.url, asset.name)}
                       className="p-1.5 rounded hover:bg-white/5 text-text-muted hover:text-accent-cyan transition-colors"
@@ -845,6 +959,15 @@ export default function Assets() {
         )}
       </AnimatePresence>
 
+      {editingSceneAsset && (
+        <SceneAssetEditor
+          asset={editingSceneAsset}
+          mode={sceneEditorMode}
+          onClose={() => setEditingSceneAsset(null)}
+          onSaved={() => fetchAssets()}
+        />
+      )}
+
       {/* ── Generate Asset Modal ── */}
       <GenerateAssetModal
         open={showGenerateModal}
@@ -911,8 +1034,8 @@ function GenerateAssetModal({
             setCfgScale(first.params.defaultCfgScale)
           }
         }
-      } catch (err: any) {
-        if (!cancelled) setModelsError(err?.message || '加载模型失败')
+      } catch (err: unknown) {
+        if (!cancelled) setModelsError(getErrorMessage(err, '加载模型失败'))
       } finally {
         if (!cancelled) setModelsLoading(false)
       }
@@ -965,8 +1088,8 @@ function GenerateAssetModal({
       toast.success('素材生成成功！')
       setPreviewUrl(null)
       onGenerated()
-    } catch (err: any) {
-      toast.error('生成失败: ' + (err?.message || '未知错误'))
+    } catch (err: unknown) {
+      toast.error('生成失败: ' + getErrorMessage(err))
     } finally {
       setIsGenerating(false)
     }
@@ -995,8 +1118,8 @@ function GenerateAssetModal({
         style: style || undefined,
       })
       setPreviewUrl(result.url)
-    } catch (err: any) {
-      toast.error('预览失败: ' + (err?.message || '未知错误'))
+    } catch (err: unknown) {
+      toast.error('预览失败: ' + getErrorMessage(err))
     } finally {
       setPreviewLoading(false)
     }

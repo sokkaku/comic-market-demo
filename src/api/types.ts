@@ -69,10 +69,13 @@ export interface PaymentMethod {
 }
 
 // ─── Asset ───
+export type SceneAssetKind = 'image' | 'editable3d' | 'imageToStoryboard3d';
+
 export interface Asset {
   id: string;
   name: string;
   type: string;
+  sceneKind?: SceneAssetKind;
   mimeType: string;
   size: number;
   url: string;
